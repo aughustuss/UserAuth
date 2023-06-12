@@ -35,7 +35,7 @@ namespace UserAuth.Controllers
             if (!Hasher.VerifyPassword(userObj.Password, dbUser.Password))
                 return BadRequest(new { Message = "Senha inválida." });
 
-
+            userObj.Token = CreateJwtToken(userObj);
 
             return Ok(new
             {
@@ -44,7 +44,7 @@ namespace UserAuth.Controllers
                 dbUser.UserName,
                 dbUser.LastName,
                 dbUser.FirstName,
-                accesstoken = "",
+                accesstoken = userObj.Token,
             });
         }
 
@@ -104,7 +104,7 @@ namespace UserAuth.Controllers
         private string CreateJwtToken(User userObj)
         {
             var jwtHandler = new JwtSecurityTokenHandler();
-            var key = Encoding.ASCII.GetBytes("acesstoken");
+            var key = Encoding.ASCII.GetBytes("secretsecretaccesstoken");
             var identity = new ClaimsIdentity(new Claim[]
             {
                 new Claim(ClaimTypes.Role, userObj.Role),
@@ -119,6 +119,12 @@ namespace UserAuth.Controllers
             };
             var token = jwtHandler.CreateToken(tokenDescriptor);
             return jwtHandler.WriteToken(token);
+        }
+
+        [HttpGet]
+        public async Task<ActionResult<User>> GetUsers()
+        {
+            return Ok(await _authContext.Users.ToListAsync());
         }
 
     }
