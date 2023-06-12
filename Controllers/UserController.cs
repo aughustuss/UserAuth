@@ -7,6 +7,10 @@ using UserAuth.Models;
 using UserAuth.Helpers;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.IdentityModel.Tokens.Jwt;
+using System;
+using System.Security.Claims;
+using Microsoft.IdentityModel.Tokens;
 
 namespace UserAuth.Controllers
 {
@@ -31,13 +35,16 @@ namespace UserAuth.Controllers
             if (!Hasher.VerifyPassword(userObj.Password, dbUser.Password))
                 return BadRequest(new { Message = "Senha inválida." });
 
+
+
             return Ok(new
             {
                 Message = "Login feito com sucesso.",
                 dbUser.Email,
                 dbUser.UserName,
                 dbUser.LastName,
-                dbUser.FirstName
+                dbUser.FirstName,
+                accesstoken = "",
             });
         }
 
@@ -92,6 +99,26 @@ namespace UserAuth.Controllers
                 sb.Append("Senha deve conter pelo menos um caractére especial." + Environment.NewLine);
 
             return sb.ToString();
+        }
+
+        private string CreateJwtToken(User userObj)
+        {
+            var jwtHandler = new JwtSecurityTokenHandler();
+            var key = Encoding.ASCII.GetBytes("acesstoken");
+            var identity = new ClaimsIdentity(new Claim[]
+            {
+                new Claim(ClaimTypes.Role, userObj.Role),
+                new Claim(ClaimTypes.Name, $"{userObj.FirstName}{userObj.LastName}"),
+            });
+            var credentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256);
+            var tokenDescriptor = new SecurityTokenDescriptor
+            {
+                Subject = identity,
+                Expires = DateTime.Now.AddDays(3),
+                SigningCredentials = credentials,
+            };
+            var token = jwtHandler.CreateToken(tokenDescriptor);
+            return jwtHandler.WriteToken(token);
         }
 
     }
