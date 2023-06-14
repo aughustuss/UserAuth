@@ -11,6 +11,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System;
 using System.Security.Claims;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.Authorization;
 
 namespace UserAuth.Controllers
 {
@@ -19,8 +20,11 @@ namespace UserAuth.Controllers
     public class UserController : ControllerBase
     {
         private readonly AddDbcontext _authContext;
-        public UserController(AddDbcontext addDbContext)
+        private readonly IConfiguration _configuration;
+
+        public UserController(AddDbcontext addDbContext, IConfiguration configuration)
         {
+            _configuration = configuration;
             _authContext = addDbContext; 
         }
         [HttpPost("authenticate")]
@@ -35,16 +39,25 @@ namespace UserAuth.Controllers
             if (!Hasher.VerifyPassword(userObj.Password, dbUser.Password))
                 return BadRequest(new { Message = "Senha inválida." });
 
-            userObj.Token = CreateJwtToken(userObj);
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = Encoding.ASCII.GetBytes("h1tQCpuDMroijuG56kAt72346TYGBNSHRY1276FHCNSKAJRYSBC");
+            var tokenDescriptor = new SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity(new Claim[]{
+                    new Claim(ClaimTypes.NameIdentifier, dbUser.UserName),
+                    new Claim(ClaimTypes.Name, $"{dbUser.FirstName} {dbUser.LastName}"),
+                    new Claim(ClaimTypes.Role, dbUser.Role)
+                }),
+                Expires = DateTime.Now.AddDays(3),
+                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256),
+            };
+
+            var token = tokenHandler.CreateToken(tokenDescriptor);
+            var accesstoken = tokenHandler.WriteToken(token);
 
             return Ok(new
             {
-                Message = "Login feito com sucesso.",
-                dbUser.Email,
-                dbUser.UserName,
-                dbUser.LastName,
-                dbUser.FirstName,
-                accesstoken = userObj.Token,
+                accesstoken
             });
         }
 
@@ -86,7 +99,7 @@ namespace UserAuth.Controllers
             return await _authContext.Users.AnyAsync(x => x.Email == Email);
         }
 
-        private string CheckPasswordStrength(string Password)
+        private static string CheckPasswordStrength(string Password)
         {
             StringBuilder sb = new StringBuilder();
             if(Password.Length < 8)
@@ -101,30 +114,24 @@ namespace UserAuth.Controllers
             return sb.ToString();
         }
 
-        private string CreateJwtToken(User userObj)
+        private static string CreateJwt(User user)
         {
-            var jwtHandler = new JwtSecurityTokenHandler();
-            var key = Encoding.ASCII.GetBytes("secretsecretaccesstoken");
-            var identity = new ClaimsIdentity(new Claim[]
+            var securitykey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("h1tQCpuDMroijuG56kAt72346TYGBNSHRY1276FHCNSKAJRYSBC"));
+            var credentials = new SigningCredentials(securitykey, SecurityAlgorithms.HmacSha256);
+            var claims = new ClaimsIdentity(new Claim[]
             {
-                new Claim(ClaimTypes.Role, userObj.Role),
-                new Claim(ClaimTypes.Name, $"{userObj.FirstName}{userObj.LastName}"),
+                new Claim(ClaimTypes.Name, $"{user.FirstName} {user.LastName}"),
+                new Claim(ClaimTypes.Role, user.Role),
             });
-            var credentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256);
             var tokenDescriptor = new SecurityTokenDescriptor
             {
-                Subject = identity,
+                Subject = claims,
                 Expires = DateTime.Now.AddDays(3),
                 SigningCredentials = credentials,
             };
+            var jwtHandler = new JwtSecurityTokenHandler();
             var token = jwtHandler.CreateToken(tokenDescriptor);
             return jwtHandler.WriteToken(token);
-        }
-
-        [HttpGet]
-        public async Task<ActionResult<User>> GetUsers()
-        {
-            return Ok(await _authContext.Users.ToListAsync());
         }
 
     }
