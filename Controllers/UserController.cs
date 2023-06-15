@@ -12,6 +12,9 @@ using System;
 using System.Security.Claims;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.AspNetCore.Authorization;
+using System.Security.Cryptography;
+using UserAuth.Models.Dto;
+using UserAuth.Migrations;
 
 namespace UserAuth.Controllers
 {
@@ -20,11 +23,9 @@ namespace UserAuth.Controllers
     public class UserController : ControllerBase
     {
         private readonly AddDbcontext _authContext;
-        private readonly IConfiguration _configuration;
 
-        public UserController(AddDbcontext addDbContext, IConfiguration configuration)
+        public UserController(AddDbcontext addDbContext)
         {
-            _configuration = configuration;
             _authContext = addDbContext; 
         }
         [HttpPost("authenticate")]
@@ -39,25 +40,17 @@ namespace UserAuth.Controllers
             if (!Hasher.VerifyPassword(userObj.Password, dbUser.Password))
                 return BadRequest(new { Message = "Senha inválida." });
 
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var key = Encoding.ASCII.GetBytes("h1tQCpuDMroijuG56kAt72346TYGBNSHRY1276FHCNSKAJRYSBC");
-            var tokenDescriptor = new SecurityTokenDescriptor
-            {
-                Subject = new ClaimsIdentity(new Claim[]{
-                    new Claim(ClaimTypes.NameIdentifier, dbUser.UserName),
-                    new Claim(ClaimTypes.Name, $"{dbUser.FirstName} {dbUser.LastName}"),
-                    new Claim(ClaimTypes.Role, dbUser.Role)
-                }),
-                Expires = DateTime.Now.AddDays(3),
-                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256),
-            };
+            dbUser.Token = CreateJwt(dbUser);
+            var accessToken = dbUser.Token;
+            var refreshToken = CreateJwtRefresh();
+            dbUser.RefreshToken = refreshToken;
+            dbUser.TokenExpiration = DateTime.UtcNow.AddDays(5);
+            await _authContext.SaveChangesAsync();
 
-            var token = tokenHandler.CreateToken(tokenDescriptor);
-            var accesstoken = tokenHandler.WriteToken(token);
-
-            return Ok(new
+            return Ok(new TokenApiDto()
             {
-                accesstoken
+                AccessToken = accessToken,
+                RefreshToken = refreshToken
             });
         }
 
@@ -126,12 +119,88 @@ namespace UserAuth.Controllers
             var tokenDescriptor = new SecurityTokenDescriptor
             {
                 Subject = claims,
-                Expires = DateTime.Now.AddDays(3),
+                Expires = DateTime.UtcNow.AddMinutes(5),
                 SigningCredentials = credentials,
             };
             var jwtHandler = new JwtSecurityTokenHandler();
             var token = jwtHandler.CreateToken(tokenDescriptor);
             return jwtHandler.WriteToken(token);
+        }
+
+        private string CreateJwtRefresh()
+        {
+            var tokenBytes = RandomNumberGenerator.GetBytes(64);
+            var refreshToken = Convert.ToBase64String(tokenBytes);
+
+            var tokenPresents = _authContext.Users.Any(a => a.RefreshToken == refreshToken);
+
+            if (tokenPresents)
+                return CreateJwtRefresh();
+
+            return refreshToken;
+        }
+
+        private ClaimsPrincipal GetPrincipalFromToken(string token)
+        {
+            var key = Encoding.ASCII.GetBytes("h1tQCpuDMroijuG56kAt72346TYGBNSHRY1276FHCNSKAJRYSBC");
+            var refreshTokenParameters = new TokenValidationParameters
+            {
+                ValidateAudience = false,
+                ValidateIssuer = false,
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(key),
+                ValidateLifetime = false
+            };
+            var refreshTokenHandler = new JwtSecurityTokenHandler();
+            SecurityToken securityToken;
+            var principal = refreshTokenHandler.ValidateToken(token, refreshTokenParameters, out securityToken);
+            var jwtSecurityToken = securityToken as JwtSecurityToken;
+            if (jwtSecurityToken == null || !jwtSecurityToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.InvariantCultureIgnoreCase))
+                throw new SecurityTokenException("Token inválido...");
+            return principal;
+        }
+
+        [HttpPost("refresh")]
+        
+        public async Task<IActionResult> RefreshToken(TokenApiDto tokenApi)
+        {
+            if (tokenApi == null)
+                return BadRequest("Requisição inválida. ");
+            string accessToken = tokenApi.AccessToken;
+            string refreshToken = tokenApi.RefreshToken;
+            var getPrincipal = GetPrincipalFromToken(accessToken);
+            var username = getPrincipal.Identity.Name;
+            var user = await _authContext.Users.FirstOrDefaultAsync(u => u.UserName == username);
+            if (user == null || user.RefreshToken != refreshToken || user.TokenExpiration <= DateTime.UtcNow)
+                return BadRequest("Token inválido na requisição.");
+            var newAccessToken = CreateJwt(user);
+            var newRefreshToken = CreateJwtRefresh();
+            user.RefreshToken = newRefreshToken;
+            await _authContext.SaveChangesAsync();
+            return Ok(new TokenApiDto()
+            {
+                AccessToken = newAccessToken,
+                RefreshToken = newRefreshToken
+            });
+        }
+
+        [HttpPost("send-reset-email/{email}")]
+        public async Task<IActionResult> SendEmail(string email)
+        {
+            var user = await _authContext.Users.FirstOrDefaultAsync(a => a.Email == email);
+            if (user is null)
+            {
+                return NotFound(new
+                {
+                    StatusCode = 404,
+                    Message = "Email não encontrado."
+                });
+            }
+            var tokenBytes = RandomNumberGenerator.GetBytes(64);
+            var emailToken = Convert.ToBase64String(tokenBytes);
+            user.ResetPasswordToken = emailToken;
+            user.ResetPasswordExpiration = DateTime.UtcNow.AddMinutes(15);
+
         }
 
     }
