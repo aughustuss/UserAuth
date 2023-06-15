@@ -188,7 +188,7 @@ namespace UserAuth.Controllers
             });
         }
 
-        [HttpPost("send-reset-email/{email}")]
+        [HttpPost("send-reset-password/{email}")]
         public async Task<IActionResult> SendEmail(string email)
         {
             var user = await _authContext.Users.FirstOrDefaultAsync(a => a.Email == email);
@@ -216,7 +216,7 @@ namespace UserAuth.Controllers
             });
         }
 
-        [HttpPost("reset-email")]
+        [HttpPost("reset-password")]
         public async Task<IActionResult> ResetPassword(ResetPasswordDto resetPasswordDto)
         {
             var newToken = resetPasswordDto.EmailToken.Replace(" ", "+");

@@ -16,7 +16,7 @@ namespace UserAuth.Utility
         public void SendEmail(Emails email)
         {
             var emailObj = new MimeMessage();
-            var from = _config["EmailSettings: From"];
+            var from = _config["EmailSettings:From"];
             emailObj.From.Add(new MailboxAddress("AD's Burguer", from));
             emailObj.To.Add(new MailboxAddress(email.To, email.To));
             emailObj.Subject = email.Subject;
@@ -28,8 +28,8 @@ namespace UserAuth.Utility
             {
                 try
                 {
-                    client.Connect(_config["EmailSettings: SmtpServer"], 465, true);
-                    client.Authenticate(_config["EmailSettings: From"], _config["EmailSettings: Password"]);
+                    client.Connect(_config["EmailSettings:SmtpServer"], 465, true);
+                    client.Authenticate(_config["EmailSettings:From"], _config["EmailSettings:Password"]);
                     client.Send(emailObj);
                 } catch (Exception ex)
                 {
