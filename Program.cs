@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using UserAuth.Context;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using UserAuth.Utility;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,6 +36,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
         ClockSkew = TimeSpan.Zero
     };
 });
+builder.Services.AddScoped<IEmailService, EmailService>();
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.

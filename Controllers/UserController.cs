@@ -15,6 +15,7 @@ using Microsoft.AspNetCore.Authorization;
 using System.Security.Cryptography;
 using UserAuth.Models.Dto;
 using UserAuth.Migrations;
+using UserAuth.Utility;
 
 namespace UserAuth.Controllers
 {
@@ -23,10 +24,13 @@ namespace UserAuth.Controllers
     public class UserController : ControllerBase
     {
         private readonly AddDbcontext _authContext;
-
-        public UserController(AddDbcontext addDbContext)
+        private readonly IConfiguration _config;
+        private readonly IEmailService _emailService;
+        public UserController(AddDbcontext addDbContext, IConfiguration configuration, IEmailService emailService)
         {
-            _authContext = addDbContext; 
+            _authContext = addDbContext;
+            _config = configuration;
+            _emailService = emailService;
         }
         [HttpPost("authenticate")]
         public async Task<IActionResult> Authenticate([FromBody] User userObj)
@@ -200,7 +204,50 @@ namespace UserAuth.Controllers
             var emailToken = Convert.ToBase64String(tokenBytes);
             user.ResetPasswordToken = emailToken;
             user.ResetPasswordExpiration = DateTime.UtcNow.AddMinutes(15);
+            string from = _config["EmailSettings: From"];
+            var emailObj = new Emails(email, "Redefinição de Senha", EmailBody.EmailStringBody(email, emailToken));
+            _emailService.SendEmail(emailObj);
+            _authContext.Entry(user).State = EntityState.Modified;
+            await _authContext.SaveChangesAsync();
+            return Ok(new
+            {
+                Status = 200,
+                Message = "Email enviado."
+            });
+        }
 
+        [HttpPost("reset-email")]
+        public async Task<IActionResult> ResetPassword(ResetPasswordDto resetPasswordDto)
+        {
+            var newToken = resetPasswordDto.EmailToken.Replace(" ", "+");
+            var user = await _authContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Email == resetPasswordDto.Email);
+            if (user == null)
+            {
+                return NotFound(new
+                {
+                    StatusCode = 404,
+                    Message = "Usuário não existe..."
+                }); 
+            }
+            var tokenCode = user.ResetPasswordToken;
+            DateTime emailTokenExpirity = user.ResetPasswordExpiration;
+            if (tokenCode != resetPasswordDto.EmailToken || emailTokenExpirity < DateTime.UtcNow)
+            {
+                return BadRequest(new
+                {
+                    StatusCode = 400,
+                    Message = "Token expirado ou link inválido."
+                });
+            }
+            user.Password = Hasher.HashPassword(resetPasswordDto.NewPassword);
+            _authContext.Entry(user).State = EntityState.Modified;
+            await _authContext.SaveChangesAsync();
+            return Ok(new
+            {
+                StatusCode = 200,
+                Message = "Senha redefinida com sucesso."
+            });
+            
         }
 
     }

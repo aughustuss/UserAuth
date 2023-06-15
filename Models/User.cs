@@ -15,5 +15,7 @@ namespace UserAuth.Models
         public string Role { get; set; } = string.Empty;
         public string RefreshToken { get; set; } = string.Empty;
         public DateTime TokenExpiration { get; set; }
+        public string? ResetPasswordToken { get; set; }
+        public DateTime ResetPasswordExpiration { get; set; }
     }
 }
