@@ -21,7 +21,7 @@ builder.Services.AddCors(option =>
 {
     option.AddPolicy("AuthAPI", builder =>
     {
-        builder.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+        builder.WithOrigins("https://projeto-foods-aughustuss.vercel.app/").AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
     });
 });
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
